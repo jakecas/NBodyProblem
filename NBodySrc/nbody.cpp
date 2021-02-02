@@ -44,6 +44,12 @@ struct Particle
 		, Velocity( 0.f, 0.f )
 		, Mass ( ((float)rand()) / RAND_MAX * maxBodyMassVariance + minBodyMass )
 	{ }
+
+	Particle(float x, float y, float m)
+	    : Position(x, y)
+	    , Velocity(0.f, 0.f)
+	    , Mass(m)
+    {}
 };
 
 /*
@@ -158,31 +164,38 @@ int main(int argc, char **argv)
 	    }
 	}
 
-
-	printf("Status:\n");
-	printf("File       : %s\n", file);
-	printf("Output     ? %s\n", (output ? "true" : "false"));
-	printf("Particles  : %d\n", particleCount);
-	printf("G const    : %f\n", gTerm);
-	printf("Iterations : %d\n", maxIteration);
-	printf("Time Step  : %f\n", deltaT);
-	return 0;
-
-
 	std::stringstream fileOutput;
 	std::vector<Particle> bodies;
 
-	for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
-		bodies.push_back(Particle());
+	if(strlen(file) == 0){
+        for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
+            bodies.push_back(Particle());
+	} else {
+        std::string line;
+        std::ifstream input(file);
+
+        if(!input.is_open())
+            throw std::runtime_error("Input file could not be read.");
+
+	    while(std::getline(input, line)){
+	        std::stringstream ss_line(line);
+	        std::string m, x, y;
+            std::getline(ss_line, m, ',');
+	        std::getline(ss_line, x, ',');
+	        std::getline(ss_line, y, ',');
+	        bodies.push_back(Particle(stof(x), stof(y), stof(m)));
+	    }
+	}
 			
-	for (int iteration = 0; iteration < maxIteration; ++iteration)
-	{
+	for (int iteration = 0; iteration < maxIteration; ++iteration){
 		ComputeForces(bodies, gTerm, deltaT);
 		MoveBodies(bodies, deltaT);
-		
-		fileOutput.str(std::string());
-		fileOutput << "nbody_" << iteration << ".txt";
-		PersistPositions(fileOutput.str(), bodies);
+
+		if(output){
+		    fileOutput.str(std::string());
+		    fileOutput << "out/nbody_" << iteration << ".txt";
+		    PersistPositions(fileOutput.str(), bodies);
+		}
 	}
 
 	return 0;
