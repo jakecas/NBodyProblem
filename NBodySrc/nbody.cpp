@@ -13,7 +13,10 @@
 #include <sstream>
 #include <vector>
 
+#include <stdio.h>
+
 #include "vector2.h"
+#include "cmd.h"
 
 /*
  * Constant definitions for field dimensions, and particle masses
@@ -121,10 +124,50 @@ void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p
 
 int main(int argc, char **argv)
 {
-	const int particleCount = 1024;
-	const int maxIteration = 1000;
-	const float deltaT = 0.01f;
-	const float gTerm = 20.f;
+    char file[64]; memset(file, '\0', 64);
+    bool output = true;
+    int particleCount = 1024;
+    float gTerm = 1.f;
+    int maxIteration = 1000;
+	float deltaT = 0.005f;
+
+	for (int i = 1; i < argc; i++){
+	    switch(getArgSwitch(argv[i])){
+	        case INPUT_FILE:
+	            strncpy(file, argv[++i], 64);
+	            break;
+            case ENABLE_OUTPUT:
+                if(strncmp(argv[++i], "false", 5) == 0)
+                    output = false;
+                break;
+            case NUM_OF_PARTICLES:
+                particleCount = atoi(argv[++i]);
+                break;
+            case G_CONST:
+                gTerm = atof(argv[++i]);
+                break;
+            case ITERATIONS:
+                maxIteration = atoi(argv[++i]);
+                break;
+            case TIME_STEP:
+                deltaT = atof(argv[++i]);
+                break;
+            default:
+                printf("Invalid arg found");
+                break;
+	    }
+	}
+
+
+	printf("Status:\n");
+	printf("File       : %s\n", file);
+	printf("Output     ? %s\n", (output ? "true" : "false"));
+	printf("Particles  : %d\n", particleCount);
+	printf("G const    : %f\n", gTerm);
+	printf("Iterations : %d\n", maxIteration);
+	printf("Time Step  : %f\n", deltaT);
+	return 0;
+
 
 	std::stringstream fileOutput;
 	std::vector<Particle> bodies;
