@@ -13,7 +13,10 @@
 #include <sstream>
 #include <vector>
 
+#include <stdio.h>
+
 #include "vector2.h"
+#include "cmd.h"
 
 /*
  * Constant definitions for field dimensions, and particle masses
@@ -41,6 +44,12 @@ struct Particle
 		, Velocity( 0.f, 0.f )
 		, Mass ( ((float)rand()) / RAND_MAX * maxBodyMassVariance + minBodyMass )
 	{ }
+
+	Particle(float x, float y, float m)
+	    : Position(x, y)
+	    , Velocity(0.f, 0.f)
+	    , Mass(m)
+    {}
 };
 
 /*
@@ -121,25 +130,72 @@ void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p
 
 int main(int argc, char **argv)
 {
-	const int particleCount = 1024;
-	const int maxIteration = 1000;
-	const float deltaT = 0.01f;
-	const float gTerm = 20.f;
+    char file[64]; memset(file, '\0', 64);
+    bool output = true;
+    int particleCount = 1024;
+    float gTerm = 1.f;
+    int maxIteration = 1000;
+	float deltaT = 0.005f;
+
+	for (int i = 1; i < argc; i++){
+	    switch(getArgSwitch(argv[i])){
+	        case INPUT_FILE:
+	            strncpy(file, argv[++i], 64);
+	            break;
+            case ENABLE_OUTPUT:
+                if(strncmp(argv[++i], "false", 5) == 0)
+                    output = false;
+                break;
+            case NUM_OF_PARTICLES:
+                particleCount = atoi(argv[++i]);
+                break;
+            case G_CONST:
+                gTerm = atof(argv[++i]);
+                break;
+            case ITERATIONS:
+                maxIteration = atoi(argv[++i]);
+                break;
+            case TIME_STEP:
+                deltaT = atof(argv[++i]);
+                break;
+            default:
+                printf("Invalid arg found");
+                break;
+	    }
+	}
 
 	std::stringstream fileOutput;
 	std::vector<Particle> bodies;
 
-	for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
-		bodies.push_back(Particle());
+	if(strlen(file) == 0){
+        for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
+            bodies.push_back(Particle());
+	} else {
+        std::string line;
+        std::ifstream input(file);
+
+        if(!input.is_open())
+            throw std::runtime_error("Input file could not be read.");
+
+	    while(std::getline(input, line)){
+	        std::stringstream ss_line(line);
+	        std::string m, x, y;
+            std::getline(ss_line, m, ',');
+	        std::getline(ss_line, x, ',');
+	        std::getline(ss_line, y, ',');
+	        bodies.push_back(Particle(stof(x), stof(y), stof(m)));
+	    }
+	}
 			
-	for (int iteration = 0; iteration < maxIteration; ++iteration)
-	{
+	for (int iteration = 0; iteration < maxIteration; ++iteration){
 		ComputeForces(bodies, gTerm, deltaT);
 		MoveBodies(bodies, deltaT);
-		
-		fileOutput.str(std::string());
-		fileOutput << "nbody_" << iteration << ".txt";
-		PersistPositions(fileOutput.str(), bodies);
+
+		if(output){
+		    fileOutput.str(std::string());
+		    fileOutput << "out/nbody_" << iteration << ".txt";
+		    PersistPositions(fileOutput.str(), bodies);
+		}
 	}
 
 	return 0;
