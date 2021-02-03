@@ -1,3 +1,5 @@
 /.idea/
+/NBodySim/.idea/
 /NBodySrc/out/
+/NBodySim/venv/
 *.o
