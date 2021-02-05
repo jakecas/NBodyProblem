@@ -10,6 +10,7 @@ loop = False
 time = 0.1
 width = 100
 height = 100
+autoscale = False
 
 j = 1
 while j < len(sys.argv):
@@ -27,6 +28,8 @@ while j < len(sys.argv):
     elif sys.argv[j][:2] == "-h":
         j += 1
         height = float(sys.argv[j])
+    elif sys.argv[j] == "-autoscale":
+        autoscale = True
 
     j += 1
 
@@ -39,17 +42,21 @@ for file in sorted(os.scandir(dir), key=lambda entry: int((os.path.basename(entr
     if file.path.endswith(".txt"):
         particles_list.append(pd.read_csv(file.path, header=None, names=['mass', 'x', 'y']))
 
-fig = plt.figure()
+fig = plt.figure(figsize=(width, height))
 
 
 def init():
-    plt.xlim(-500, 500)
-    plt.ylim(-500, 500)
+    if not autoscale:
+        plt.xlim(-500, 500)
+        plt.ylim(-500, 500)
     plt.scatter(particles_list[0].x, particles_list[0].y, s=particles_list[0].mass)
 
 
 def update(i):
     plt.cla()
+    if not autoscale:
+        plt.xlim(-500, 500)
+        plt.ylim(-500, 500)
     plt.scatter(particles_list[i].x, particles_list[i].y, s=particles_list[i].mass)
 
 
