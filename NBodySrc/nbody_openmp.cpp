@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <stdio.h>
+#include <omp.h>
 
 #include "vector2.h"
 #include "cmd.h"
@@ -62,34 +63,33 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
 
 	float distance;
 
-	for (size_t j = 0; j < p_bodies.size(); ++j)
-	{
-		Particle &p1 = p_bodies[j];
-	
-		force = 0.f, acceleration = 0.f;
-	
-		for (size_t k = 0; k < p_bodies.size(); ++k)
-		{
-			if (k == j) continue;
-		
-			Particle &p2 = p_bodies[k];
-			
-			// Compute direction vector
-			direction = p2.Position - p1.Position;
-			
-			// Limit distance term to avoid singularities
-			distance = std::max<float>( 0.5f * (p2.Mass + p1.Mass), fabs(direction.Length()) );
-			
-			// Accumulate force
-			force += direction / (distance * distance * distance) * p2.Mass; 
-		}
-				
-		// Compute acceleration for body 
-		acceleration = force * p_gravitationalTerm;
-		
-		// Integrate velocity (m/s)
-		p1.Velocity += acceleration * p_deltaT;
-	}
+    #pragma omp parallel for
+        for (size_t j = 0; j < p_bodies.size(); ++j)
+        {
+            Particle &p1 = p_bodies[j];
+
+            force = 0.f, acceleration = 0.f;
+            for (size_t k = 0; k < p_bodies.size(); ++k) {
+                if (k == j) continue;
+
+                Particle &p2 = p_bodies[k];
+
+                // Compute direction vector
+                direction = p2.Position - p1.Position;
+
+                // Limit distance term to avoid singularities
+                distance = std::max<float>(0.5f * (p2.Mass + p1.Mass), fabs(direction.Length()));
+
+                // Accumulate force
+                force += direction / (distance * distance * distance) * p2.Mass;
+            }
+
+            // Compute acceleration for body
+            acceleration = force * p_gravitationalTerm;
+
+            // Integrate velocity (m/s)
+            p1.Velocity += acceleration * p_deltaT;
+        }
 }
 
 /*
@@ -97,8 +97,8 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
  */
 void MoveBodies(std::vector<Particle> &p_bodies, float p_deltaT)
 {
-	for (size_t j = 0; j < p_bodies.size(); ++j)
-	{
+#pragma omp parallel for
+	for (size_t j = 0; j < p_bodies.size(); ++j){
 		p_bodies[j].Position += p_bodies[j].Velocity * p_deltaT;
 	}
 }
@@ -137,6 +137,7 @@ int main(int argc, char **argv)
     int maxIteration = 1000;
 	float deltaT = 0.005f;
 
+	// Read command line arguments
 	for (int i = 1; i < argc; i++){
 	    switch(getArgSwitch(argv[i])){
 	        case INPUT_FILE:
@@ -167,6 +168,7 @@ int main(int argc, char **argv)
 	std::stringstream fileOutput;
 	std::vector<Particle> bodies;
 
+	// Load or generate particles
 	if(strlen(file) == 0){
         for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
             bodies.push_back(Particle());
@@ -186,7 +188,8 @@ int main(int argc, char **argv)
 	        bodies.push_back(Particle(stof(x), stof(y), stof(m)));
 	    }
 	}
-			
+
+	// Do NBody calculations and output files if flag is set
 	for (int iteration = 0; iteration < maxIteration; ++iteration){
 		ComputeForces(bodies, gTerm, deltaT);
 		MoveBodies(bodies, deltaT);
