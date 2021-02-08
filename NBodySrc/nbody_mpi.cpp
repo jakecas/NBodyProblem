@@ -127,7 +127,7 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    // Creating Metadata MPI_Type
+    // Creating Particle MPI_Type
     const int elements = 3;
     int          elt_lengths[elements] = {2, 2, 1};
     MPI_Datatype types[elements] = {MPI_FLOAT, MPI_FLOAT, MPI_FLOAT};
@@ -161,16 +161,16 @@ int main(int argc, char **argv) {
                     output = false;
                 break;
             case NUM_OF_PARTICLES:
-                metadata.particleCount = atoi(argv[++i]);
+                particleCount = atoi(argv[++i]);
                 break;
             case G_CONST:
-                metadata.gTerm = atof(argv[++i]);
+                gTerm = atof(argv[++i]);
                 break;
             case ITERATIONS:
-                metadata.maxIteration = atoi(argv[++i]);
+                maxIteration = atoi(argv[++i]);
                 break;
             case TIME_STEP:
-                metadata.deltaT = atof(argv[++i]);
+                deltaT = atof(argv[++i]);
                 break;
             default:
                 printf("Invalid arg found");
@@ -210,17 +210,26 @@ int main(int argc, char **argv) {
 	    bodies.resize(particleCount);
 	}
 
-    int chunksize = metadata.particleCount / size;
-    int start = rank * chunksize;
-    // This next line assigns any remainder to the last processor
-    // (in case particle count is not divisible by num of nodes)
-    int end = (rank + 1 == size) ? particleCount : start + chunksize;
+    int chunksize = particleCount / size;
+
+    int counts[size];
+    for(int i = 0; i < size - 1; i++){
+        counts[i] = chunksize;
+    }
+    counts[size] = particleCount - ((size - 1) * chunksize);
+    int displs[size];
+    displs[0] = 0;
+    for(int i = 1; i < size; i++){
+        displs[i] = displs[i-1] + counts[i-1];
+    }
+
 
     std::stringstream fileOutput;
     // Do NBody calculations and output files if flag is set
     for (int iteration = 0; iteration < maxIteration; ++iteration){
         MPI_Bcast(&bodies, particleCount, mpi_particle_type, 0, MPI_COMM_WORLD);
-        ComputeForces(bodies, gTerm, deltaT, start, end);
+        ComputeForces(bodies, gTerm, deltaT, displs[rank], displs[rank] + counts[rank]);
+        MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, &bodies, counts[rank], displs, mpi_particle_type, MPI_COMM_WORLD)
 
         if(rank == 0) {
             MoveBodies(bodies, deltaT);
