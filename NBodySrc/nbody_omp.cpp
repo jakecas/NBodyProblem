@@ -64,8 +64,7 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
 	float distance;
 
     #pragma omp parallel for
-        for (size_t j = 0; j < p_bodies.size(); ++j)
-        {
+        for (size_t j = 0; j < p_bodies.size(); ++j) {
             Particle &p1 = p_bodies[j];
 
             force = 0.f, acceleration = 0.f;
