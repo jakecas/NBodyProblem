@@ -127,6 +127,9 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    if(rank == 0)
+        std::cout << "Running on " << size << " processors." << std::endl;
+
     // Creating Particle MPI_Type
     const int elements = 3;
     int          elt_lengths[elements] = {2, 2, 1};
@@ -204,6 +207,9 @@ int main(int argc, char **argv) {
         }
     }
 
+	if(rank == 0)
+	    std::cout << "Broadcasting particle count." << std::endl;
+
     MPI_Bcast(&particleCount, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
 	// Allocate enough space on the other nodes
@@ -219,7 +225,7 @@ int main(int argc, char **argv) {
     for(int i = 0; i < size - 1; i++){
         counts[i] = chunksize;
     }
-    counts[size] = particleCount - ((size - 1) * chunksize);
+    counts[size-1] = particleCount - ((size - 1) * chunksize);
     int displs[size];
     displs[0] = 0;
     for(int i = 1; i < size; i++){
@@ -228,14 +234,18 @@ int main(int argc, char **argv) {
 
 
     std::stringstream fileOutput;
+
+    if(rank == 0)
+        std::cout << "Broadcasting particle list to start calculations." << std::endl;
+
     // Send the starting data to everyone
-    MPI_Bcast(&bodies, particleCount, mpi_particle_type, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&bodies[0], particleCount, mpi_particle_type, 0, MPI_COMM_WORLD);
     // Do NBody calculations and output files if flag is set
     for (int iteration = 0; iteration < maxIteration; ++iteration){
         ComputeForces(bodies, gTerm, deltaT, displs[rank], displs[rank] + counts[rank]);
-        MoveBodies(bodies, deltaT, displs[rank] + counts[rank]);
+        MoveBodies(bodies, deltaT, displs[rank], displs[rank] + counts[rank]);
         // Gather the chunks together at every node
-        MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, &bodies, counts[rank], displs, mpi_particle_type, MPI_COMM_WORLD)
+        MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, &bodies[0], counts, displs, mpi_particle_type, MPI_COMM_WORLD);
 
         if(rank == 0) {
 
