@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <mpi.h>
 
+#include "sys/time.h"
+
 #include "vector2.h"
 #include "cmd.h"
 
@@ -121,7 +123,14 @@ void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p
 }
 
 int main(int argc, char **argv) {
-    MPI_Init(&argc, &argv);
+    // Start timing
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+    int rc = MPI_Init(&argc, &argv);
+
+    if(rc != MPI_SUCCESS)
+        std::cerr << "Unable to start MPI environment. RC: " << rc << std::endl;
 
     int size, rank;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -259,6 +268,14 @@ int main(int argc, char **argv) {
 
 
 	MPI_Finalize();
+
+    // Stop timing
+    gettimeofday(&end, NULL);
+
+    long seconds  = end.tv_sec  - start.tv_sec;
+    long useconds = end.tv_usec - start.tv_usec;
+    long mtime = ((seconds) * 1000 + useconds / 1000.0) + 0.5;
+    std::cout << "Performed computation for " << file << " in: " << mtime << " ms" << std::endl;
 
 	return 0;
 }
