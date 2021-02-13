@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <mpi.h>
 
+#include "sys/time.h"
+
 #include "vector2.h"
 #include "cmd.h"
 
@@ -34,21 +36,21 @@ const float maxBodyMassVariance = 5.f;
  * Particle structure
  */
 struct Particle {
-	Vector2 Position;
-	Vector2 Velocity;
-	float	Mass;
-	
-	Particle(void) 
-		: Position( ((float)rand()) / RAND_MAX * fieldWidth - fieldHalfWidth,
-					((float)rand()) / RAND_MAX * fieldHeight - fieldHalfHeight)
-		, Velocity( 0.f, 0.f )
-		, Mass ( ((float)rand()) / RAND_MAX * maxBodyMassVariance + minBodyMass )
-	{ }
+    Vector2 Position;
+    Vector2 Velocity;
+    float	Mass;
 
-	Particle(float x, float y, float m)
-	    : Position(x, y)
-	    , Velocity(0.f, 0.f)
-	    , Mass(m)
+    Particle(void)
+            : Position( ((float)rand()) / RAND_MAX * fieldWidth - fieldHalfWidth,
+                        ((float)rand()) / RAND_MAX * fieldHeight - fieldHalfHeight)
+            , Velocity( 0.f, 0.f )
+            , Mass ( ((float)rand()) / RAND_MAX * maxBodyMassVariance + minBodyMass )
+    { }
+
+    Particle(float x, float y, float m)
+            : Position(x, y)
+            , Velocity(0.f, 0.f)
+            , Mass(m)
     {}
 };
 
@@ -56,46 +58,47 @@ struct Particle {
  * Compute forces of particles exerted on one another
  */
 void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, float p_deltaT, size_t start, size_t end) {
-	Vector2 direction,
-		force, acceleration;
+    Vector2 direction,
+            force, acceleration;
 
-	float distance;
+    float distance;
 
-    #pragma omp parallel for
-        for (size_t j = start; j < end; ++j) {
-            Particle &p1 = p_bodies[j];
+    #pragma omp for schedule(static)
+    for (size_t j = start; j < end; ++j) {
+        Particle &p1 = p_bodies[j];
 
-            force = 0.f, acceleration = 0.f;
-            for (size_t k = 0; k < p_bodies.size(); ++k) {
-                if (k == j) continue;
+        force = 0.f, acceleration = 0.f;
+        for (size_t k = 0; k < p_bodies.size(); ++k) {
+            if (k == j) continue;
 
-                Particle &p2 = p_bodies[k];
+            Particle &p2 = p_bodies[k];
 
-                // Compute direction vector
-                direction = p2.Position - p1.Position;
+            // Compute direction vector
+            direction = p2.Position - p1.Position;
 
-                // Limit distance term to avoid singularities
-                distance = std::max<float>(0.5f * (p2.Mass + p1.Mass), fabs(direction.Length()));
+            // Limit distance term to avoid singularities
+            distance = std::max<float>(0.5f * (p2.Mass + p1.Mass), fabs(direction.Length()));
 
-                // Accumulate force
-                force += direction / (distance * distance * distance) * p2.Mass;
-            }
-
-            // Compute acceleration for body
-            acceleration = force * p_gravitationalTerm;
-
-            // Integrate velocity (m/s)
-            p1.Velocity += acceleration * p_deltaT;
+            // Accumulate force
+            force += direction / (distance * distance * distance) * p2.Mass;
         }
+
+        // Compute acceleration for body
+        acceleration = force * p_gravitationalTerm;
+
+        // Integrate velocity (m/s)
+        p1.Velocity += acceleration * p_deltaT;
+    }
 }
 
 /*
  * Update particle positions
  */
 void MoveBodies(std::vector<Particle> &p_bodies, float p_deltaT, size_t start, size_t end) {
-	for (size_t j = start; j < end; ++j){
-		p_bodies[j].Position += p_bodies[j].Velocity * p_deltaT;
-	}
+    #pragma omp for schedule(static)
+    for (size_t j = start; j < end; ++j){
+        p_bodies[j].Position += p_bodies[j].Velocity * p_deltaT;
+    }
 }
 
 /*
@@ -103,30 +106,40 @@ void MoveBodies(std::vector<Particle> &p_bodies, float p_deltaT, size_t start, s
  */
 void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p_bodies)
 {
-	std::cout << "Writing to file: " << p_strFilename << std::endl;
-	
-	std::ofstream output(p_strFilename.c_str());
-	
-	if (output.is_open()) {
-		for (int j = 0; j < p_bodies.size(); j++) {
-			output << 	p_bodies[j].Mass << ", " <<
-				p_bodies[j].Position.Element[0] << ", " <<
-				p_bodies[j].Position.Element[1] << std::endl;
-		}
-		
-		output.close();
-	}
-	else
-		std::cerr << "Unable to persist data to file:" << p_strFilename << std::endl;
+    std::cout << "Writing to file: " << p_strFilename << std::endl;
+
+    std::ofstream output(p_strFilename.c_str());
+
+    if (output.is_open()) {
+        for (int j = 0; j < p_bodies.size(); j++) {
+            output << 	p_bodies[j].Mass << ", " <<
+                   p_bodies[j].Position.Element[0] << ", " <<
+                   p_bodies[j].Position.Element[1] << std::endl;
+        }
+
+        output.close();
+    }
+    else
+        std::cerr << "Unable to persist data to file:" << p_strFilename << std::endl;
 
 }
 
 int main(int argc, char **argv) {
-    MPI_Init(&argc, &argv);
+    // Start timing
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+    int rc = MPI_Init(&argc, &argv);
+
+    if(rc != MPI_SUCCESS)
+        std::cerr << "Unable to start MPI environment. RC: " << rc << std::endl;
 
     int size, rank;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if(rank == 0)
+        std::cout << "Running on " << size << " processors." << std::endl;
 
     // Creating Particle MPI_Type
     const int elements = 3;
@@ -151,12 +164,12 @@ int main(int argc, char **argv) {
     float gTerm = 1.f;
     float deltaT = 0.005f;
 
-	// Read command line arguments
-	for (int i = 1; i < argc; i++){
-	    switch(getArgSwitch(argv[i])){
-	        case INPUT_FILE:
-	            strncpy(file, argv[++i], 64);
-	            break;
+    // Read command line arguments
+    for (int i = 1; i < argc; i++){
+        switch(getArgSwitch(argv[i])){
+            case INPUT_FILE:
+                strncpy(file, argv[++i], 64);
+                break;
             case ENABLE_OUTPUT:
                 if(strncmp(argv[++i], "false", 5) == 0)
                     output = false;
@@ -176,13 +189,13 @@ int main(int argc, char **argv) {
             default:
                 printf("Invalid arg found");
                 break;
-	    }
-	}
+        }
+    }
 
-	std::vector<Particle> bodies;
+    std::vector<Particle> bodies;
 
     // Load or generate particles
-	if(rank == 0) {
+    if(rank == 0) {
         if (strlen(file) == 0) {
             for (int bodyIndex = 0; bodyIndex < particleCount; ++bodyIndex)
                 bodies.push_back(Particle());
@@ -205,22 +218,25 @@ int main(int argc, char **argv) {
         }
     }
 
+    if(rank == 0)
+        std::cout << "Broadcasting particle count." << std::endl;
+
     MPI_Bcast(&particleCount, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-	// Allocate enough space on the other nodes
-	if(rank != 0){
-	    bodies.resize(particleCount);
-	}
+    // Allocate enough space on the other nodes
+    if(rank != 0){
+        bodies.resize(particleCount);
+    }
 
-	// Calculate the number of particles each node will be given
-	// (if not divisible, the last node will have some extra or some less)
+    // Calculate the number of particles each node will be given
+    // (if not divisible, the last node will have some extra or some less)
     int chunksize = particleCount / size;
 
     int counts[size];
     for(int i = 0; i < size - 1; i++){
         counts[i] = chunksize;
     }
-    counts[size] = particleCount - ((size - 1) * chunksize);
+    counts[size-1] = particleCount - ((size - 1) * chunksize);
     int displs[size];
     displs[0] = 0;
     for(int i = 1; i < size; i++){
@@ -229,14 +245,25 @@ int main(int argc, char **argv) {
 
 
     std::stringstream fileOutput;
+
+    if(rank == 0)
+        std::cout << "Broadcasting particle list to start calculations." << std::endl;
+
     // Send the starting data to everyone
-    MPI_Bcast(&bodies, particleCount, mpi_particle_type, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&bodies[0], particleCount, mpi_particle_type, 0, MPI_COMM_WORLD);
     // Do NBody calculations and output files if flag is set
     for (int iteration = 0; iteration < maxIteration; ++iteration){
-        ComputeForces(bodies, gTerm, deltaT, displs[rank], displs[rank] + counts[rank]);
-        MoveBodies(bodies, deltaT, displs[rank] + counts[rank]);
+        #pragma omp parallel
+        {
+            #pragma omp master
+            if (iteration == 0)
+                printf("Using %d threads\n", omp_get_num_threads());
+            ComputeForces(bodies, gTerm, deltaT, displs[rank], displs[rank] + counts[rank]);
+            #pragma omp barrier
+            MoveBodies(bodies, deltaT, displs[rank], displs[rank] + counts[rank]);
+        }
         // Gather the chunks together at every node
-        MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, &bodies, counts[rank], displs, mpi_particle_type, MPI_COMM_WORLD)
+        MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, &bodies[0], counts, displs, mpi_particle_type, MPI_COMM_WORLD);
 
         if(rank == 0) {
 
@@ -249,7 +276,17 @@ int main(int argc, char **argv) {
     }
 
 
-	MPI_Finalize();
+    MPI_Finalize();
 
-	return 0;
+    if(rank == 0) {
+        // Stop timing
+        gettimeofday(&end, NULL);
+
+        long seconds = end.tv_sec - start.tv_sec;
+        long useconds = end.tv_usec - start.tv_usec;
+        long mtime = ((seconds) * 1000 + useconds / 1000.0) + 0.5;
+        std::cout << "Performed computation for " << file << " in: " << mtime << " ms" << std::endl;
+    }
+
+    return 0;
 }

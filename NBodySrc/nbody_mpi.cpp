@@ -269,13 +269,15 @@ int main(int argc, char **argv) {
 
 	MPI_Finalize();
 
-    // Stop timing
-    gettimeofday(&end, NULL);
+    if(rank == 0) {
+        // Stop timing
+        gettimeofday(&end, NULL);
 
-    long seconds  = end.tv_sec  - start.tv_sec;
-    long useconds = end.tv_usec - start.tv_usec;
-    long mtime = ((seconds) * 1000 + useconds / 1000.0) + 0.5;
-    std::cout << "Performed computation for " << file << " in: " << mtime << " ms" << std::endl;
+        long seconds = end.tv_sec - start.tv_sec;
+        long useconds = end.tv_usec - start.tv_usec;
+        long mtime = ((seconds) * 1000 + useconds / 1000.0) + 0.5;
+        std::cout << "Performed computation for " << file << " in: " << mtime << " ms" << std::endl;
+    }
 
 	return 0;
 }

@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <omp.h>
 
+#include "sys/time.h"
+
 #include "vector2.h"
 #include "cmd.h"
 
@@ -63,32 +65,32 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
 
 	float distance;
 
-    #pragma omp parallel for
-        for (size_t j = 0; j < p_bodies.size(); ++j) {
-            Particle &p1 = p_bodies[j];
+    #pragma omp for schedule(static)
+    for (size_t j = 0; j < p_bodies.size(); ++j) {
+        Particle &p1 = p_bodies[j];
 
-            force = 0.f, acceleration = 0.f;
-            for (size_t k = 0; k < p_bodies.size(); ++k) {
-                if (k == j) continue;
+        force = 0.f, acceleration = 0.f;
+        for (size_t k = 0; k < p_bodies.size(); ++k) {
+            if (k == j) continue;
 
-                Particle &p2 = p_bodies[k];
+            Particle &p2 = p_bodies[k];
 
-                // Compute direction vector
-                direction = p2.Position - p1.Position;
+            // Compute direction vector
+            direction = p2.Position - p1.Position;
 
-                // Limit distance term to avoid singularities
-                distance = std::max<float>(0.5f * (p2.Mass + p1.Mass), fabs(direction.Length()));
+            // Limit distance term to avoid singularities
+            distance = std::max<float>(0.5f * (p2.Mass + p1.Mass), fabs(direction.Length()));
 
-                // Accumulate force
-                force += direction / (distance * distance * distance) * p2.Mass;
-            }
-
-            // Compute acceleration for body
-            acceleration = force * p_gravitationalTerm;
-
-            // Integrate velocity (m/s)
-            p1.Velocity += acceleration * p_deltaT;
+            // Accumulate force
+            force += direction / (distance * distance * distance) * p2.Mass;
         }
+
+        // Compute acceleration for body
+        acceleration = force * p_gravitationalTerm;
+
+        // Integrate velocity (m/s)
+        p1.Velocity += acceleration * p_deltaT;
+    }
 }
 
 /*
@@ -96,7 +98,7 @@ void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, f
  */
 void MoveBodies(std::vector<Particle> &p_bodies, float p_deltaT)
 {
-#pragma omp parallel for
+    #pragma omp for schedule(static)
 	for (size_t j = 0; j < p_bodies.size(); ++j){
 		p_bodies[j].Position += p_bodies[j].Velocity * p_deltaT;
 	}
@@ -127,8 +129,11 @@ void PersistPositions(const std::string &p_strFilename, std::vector<Particle> &p
 
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
+    // Start timing
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+
     char file[64]; memset(file, '\0', 64);
     bool output = true;
     int particleCount = 1024;
@@ -190,8 +195,15 @@ int main(int argc, char **argv)
 
 	// Do NBody calculations and output files if flag is set
 	for (int iteration = 0; iteration < maxIteration; ++iteration){
-		ComputeForces(bodies, gTerm, deltaT);
-		MoveBodies(bodies, deltaT);
+        #pragma omp parallel
+        {
+            #pragma omp master
+            if(iteration == 0)
+                printf("Using %d threads\n", omp_get_num_threads());
+            ComputeForces(bodies, gTerm, deltaT);
+            #pragma omp barrier
+            MoveBodies(bodies, deltaT);
+        }
 
 		if(output){
 		    fileOutput.str(std::string());
@@ -199,6 +211,15 @@ int main(int argc, char **argv)
 		    PersistPositions(fileOutput.str(), bodies);
 		}
 	}
+
+    // Stop timing
+    gettimeofday(&end, NULL);
+
+    long seconds = end.tv_sec - start.tv_sec;
+    long useconds = end.tv_usec - start.tv_usec;
+    long mtime = ((seconds) * 1000 + useconds / 1000.0) + 0.5;
+    std::cout << "Performed computation for " << file << " in: " << mtime << " ms" << std::endl;
+
 
 	return 0;
 }
