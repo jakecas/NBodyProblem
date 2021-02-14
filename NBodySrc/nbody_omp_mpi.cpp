@@ -15,6 +15,7 @@
 
 #include <stdio.h>
 #include <mpi.h>
+#include <omp.h>
 
 #include "sys/time.h"
 
@@ -139,7 +140,7 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     if(rank == 0)
-        std::cout << "Running on " << size << " processors." << std::endl;
+        std::cout << "Running on " << size << " nodes." << std::endl;
 
     // Creating Particle MPI_Type
     const int elements = 3;
@@ -257,7 +258,7 @@ int main(int argc, char **argv) {
         {
             #pragma omp master
             if (iteration == 0)
-                printf("Using %d threads\n", omp_get_num_threads());
+                printf("Using %d threads for node %d\n", omp_get_num_threads(), rank);
             ComputeForces(bodies, gTerm, deltaT, displs[rank], displs[rank] + counts[rank]);
             #pragma omp barrier
             MoveBodies(bodies, deltaT, displs[rank], displs[rank] + counts[rank]);

@@ -137,7 +137,7 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     if(rank == 0)
-        std::cout << "Running on " << size << " processors." << std::endl;
+        std::cout << "Running on " << size << " nodes." << std::endl;
 
     // Creating Particle MPI_Type
     const int elements = 3;
