@@ -8,6 +8,8 @@
 #include <vector>
 #include "vector2.h"
 
+#define THETA 1
+
 
 /*
  * Constant definitions for field dimensions, and particle masses
@@ -53,9 +55,13 @@ enum quadrant {
 class QuadNode {
 public:
     virtual void insert(Particle* p){};
+    virtual Particle* getAsParticle(){};
+    virtual float getMass(){};
+    virtual Vector2 getPosition(){};
+    virtual bool isLeaf(){};
 };
 
-class QuadLeaf : QuadNode {
+class QuadLeaf : public QuadNode {
 public:
     Particle *p;
 
@@ -66,9 +72,25 @@ public:
     void insert(Particle* p){
         this->p = p;
     }
+
+    Particle* getAsParticle(){
+        return p;
+    }
+
+    float getMass(){
+        return p->Mass;
+    }
+
+    Vector2 getPosition(){
+        return p->Position;
+    }
+
+    bool isLeaf(){
+        return true;
+    }
 };
 
-class QuadTree : QuadNode {
+class QuadTree : public QuadNode {
     Vector2 TL_bound;
     Vector2 BR_bound;
     Vector2 Centroid;
@@ -78,14 +100,16 @@ class QuadTree : QuadNode {
     QuadNode *botLeft;
     QuadNode *botRight;
 
-public:
-    float Mass; // Total mass of children
+    float AggrMass; // Total mass of children
+    Vector2 AggrCentroid; // Summation of mass*position of each child node (divide by AggrMass to get weighted centroid)
 
+public:
     QuadTree(Vector2 TL_bound, Vector2 BR_bound){
         this->TL_bound = TL_bound;
         this->BR_bound = BR_bound;
         this->Centroid = (TL_bound + BR_bound) / 2;
-        this->Mass = 0;
+        this->AggrMass = 0;
+        this->AggrCentroid = Vector2(0, 0);
         this->topLeft = nullptr;
         this->topRight = nullptr;
         this->botLeft = nullptr;
@@ -95,7 +119,7 @@ public:
     QuadTree(std::vector<Particle> particles){
         this->setBounds(particles);
         this->Centroid = (TL_bound + BR_bound) / 2;
-        this->Mass = 0;
+        this->AggrMass = 0;
         this->topLeft = nullptr;
         this->topRight = nullptr;
         this->botLeft = nullptr;
@@ -107,11 +131,58 @@ public:
         }
     }
 
+    float getMass(){
+        return AggrMass;
+    }
+
+    Vector2 getPosition(){
+        return AggrCentroid / AggrMass;
+    }
+
+    Particle* getAsParticle(){
+        Vector2 pos = getPosition();
+        return new Particle(pos.X, pos.Y, getMass());
+    }
+
+    QuadNode* getTopLeftQuad(){
+        return topLeft;
+    }
+
+    QuadNode* getTopRightQuad(){
+        return topRight;
+    }
+
+    QuadNode* getBotLeftQuad(){
+        return botLeft;
+    }
+
+    QuadNode* getBotRightQuad(){
+        return botRight;
+    }
+
+    bool isLeaf(){
+        return false;
+    }
+
+    bool isFarEnough(Particle p);
     void setBounds(std::vector<Particle> particles);
     quadrant findQuadrant(Particle* p);
     void insertIntoSubtree(Particle* p);
     void insert(Particle* p);
 };
+
+bool QuadTree::isFarEnough(Particle p) {
+    // Distance from aggregate centroid to p
+    Vector2 direction = this->getPosition() - p.Position;
+    float distance = fabs(direction.Length());
+
+    // Radius of this quadrant
+    float radius = ((BR_bound.X - TL_bound.X) +(TL_bound.Y - BR_bound.Y))/2.f ;
+
+    // When THETA=1, this is checking that the distance is greater than the radius,
+    // i.e. the particle is outside the bounds of this quadrant.
+    return (radius / distance) < THETA;
+}
 
 void QuadTree::setBounds(std::vector<Particle> particles){
     this->TL_bound = particles[0].Position;
@@ -147,30 +218,42 @@ void QuadTree::insertIntoSubtree(Particle *p) {
     switch (findQuadrant(p)){
         case TL:
             if(topLeft == nullptr)
-                topLeft = new QuadNode();
-            else
+                topLeft = new QuadLeaf();
+            else {
+                Particle *tmp = topLeft->getAsParticle();
                 topLeft = new QuadTree(TL_bound, Centroid);
+                topLeft->insert(tmp);
+            }
             topLeft->insert(p);
             break;
         case TR:
             if(topRight == nullptr)
-                topRight = new QuadNode();
-            else
+                topRight = new QuadLeaf();
+            else {
+                Particle *tmp = topRight->getAsParticle();
                 topRight = new QuadTree(Vector2(Centroid.X, TL_bound.Y), Vector2(BR_bound.X, Centroid.Y));
+                topRight->insert(tmp);
+            }
             topRight->insert(p);
             break;
         case BL:
             if(botLeft == nullptr)
-                botLeft = new QuadNode();
-            else
+                botLeft = new QuadLeaf();
+            else {
+                Particle *tmp = botLeft->getAsParticle();
                 botLeft = new QuadTree(Vector2(TL_bound.X, Centroid.Y), Vector2(Centroid.X, BR_bound.Y));
+                botLeft->insert(tmp);
+            }
             botLeft->insert(p);
             break;
         case BR:
             if(botRight == nullptr)
-                botRight = new QuadNode();
-            else
+                botRight = new QuadLeaf();
+            else {
+                Particle *tmp = botRight->getAsParticle();
                 botRight = new QuadTree(Centroid, BR_bound);
+                botRight->insert(tmp);
+            }
             botRight->insert(p);
             break;
     }
@@ -180,7 +263,8 @@ void QuadTree::insert(Particle *p) {
     if(p == nullptr)
         return;
     else {
-        this->Mass += p->Mass;
+        this->AggrMass += p->Mass;
+        this->AggrCentroid += p->Mass * p->Position;
         insertIntoSubtree(p);
     }
 }

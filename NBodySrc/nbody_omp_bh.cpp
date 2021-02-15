@@ -23,35 +23,50 @@
 #include "cmd.h"
 
 
+Vector2 ComputeSingleForceOnP(Particle p1, Particle p2){
+    // Compute direction vector
+    Vector2 direction = p2.Position - p1.Position;
+
+    // Limit distance term to avoid singularities
+    float distance = std::max<float>(0.5f * (p2.Mass + p1.Mass), fabs(direction.Length()));
+
+    // Accumulate force
+    return direction / (distance * distance * distance) * p2.Mass;
+}
+
+Vector2 ComputeAggrForceOnP(Particle p, QuadNode* node) {
+    if(node == nullptr)
+        return 0.f;
+    else if(node->isLeaf()){
+        if(p.Position == node->getPosition())
+            // node is this particle itself, skip.
+            return 0.f;
+        else
+            return ComputeSingleForceOnP(p, *(node->getAsParticle()));
+    }
+
+    QuadTree* tree = dynamic_cast<QuadTree*>(node);
+    if(tree->isFarEnough(p))
+        return ComputeSingleForceOnP(p, *(tree->getAsParticle()));
+    else
+        return ComputeAggrForceOnP(p, tree->getTopLeftQuad())
+            + ComputeAggrForceOnP(p, tree->getTopRightQuad())
+            + ComputeAggrForceOnP(p, tree->getBotLeftQuad())
+            + ComputeAggrForceOnP(p, tree->getBotRightQuad());
+}
+
 /*
  * Compute forces of particles exerted on one another
  */
-void ComputeForces(std::vector<Particle> &p_bodies, float p_gravitationalTerm, float p_deltaT)
-{
-	Vector2 direction,
-		force, acceleration;
-
-	float distance;
+void ComputeForces(std::vector<Particle> &p_bodies, QuadTree* tree, float p_gravitationalTerm, float p_deltaT) {
+	Vector2 force, acceleration;
 
     #pragma omp for schedule(static)
     for (size_t j = 0; j < p_bodies.size(); ++j) {
         Particle &p1 = p_bodies[j];
 
         force = 0.f, acceleration = 0.f;
-        for (size_t k = 0; k < p_bodies.size(); ++k) {
-            if (k == j) continue;
-
-            Particle &p2 = p_bodies[k];
-
-            // Compute direction vector
-            direction = p2.Position - p1.Position;
-
-            // Limit distance term to avoid singularities
-            distance = std::max<float>(0.5f * (p2.Mass + p1.Mass), fabs(direction.Length()));
-
-            // Accumulate force
-            force += direction / (distance * distance * distance) * p2.Mass;
-        }
+        force += ComputeAggrForceOnP(p1, tree);
 
         // Compute acceleration for body
         acceleration = force * p_gravitationalTerm;
@@ -161,7 +176,7 @@ int main(int argc, char **argv) {
 	    }
 	}
 
-	std::cout << "Building tree." << std::endl;
+	std::cout << "Building initial tree..." << std::endl;
 	QuadTree *tree = new QuadTree(bodies);
     std::cout << "Tree done." << std::endl;
 
@@ -172,10 +187,11 @@ int main(int argc, char **argv) {
             #pragma omp master
             if(iteration == 0)
                 printf("Using %d threads\n", omp_get_num_threads());
-            ComputeForces(bodies, gTerm, deltaT);
+            ComputeForces(bodies, tree, gTerm, deltaT);
             #pragma omp barrier
             MoveBodies(bodies, deltaT);
         }
+        tree = new QuadTree(bodies);
 
 		if(output){
 		    fileOutput.str(std::string());
