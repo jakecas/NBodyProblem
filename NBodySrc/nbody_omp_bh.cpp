@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
 
 	std::cout << "Building initial tree..." << std::endl;
 	QuadTree *tree = new QuadTree(bodies);
-    std::cout << "Tree done." << std::endl;
+    std::cout << "Tree done. Printing...\n" << std::endl;
 
 	// Do NBody calculations and output files if flag is set
 	for (int iteration = 0; iteration < maxIteration; ++iteration){
@@ -208,6 +208,6 @@ int main(int argc, char **argv) {
     long mtime = ((seconds) * 1000 + useconds / 1000.0) + 0.5;
     std::cout << "Performed computation for " << file << " in: " << mtime << " ms" << std::endl;
 
-
+    delete tree;
 	return 0;
 }
